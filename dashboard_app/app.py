@@ -98,11 +98,7 @@ stc.html(f"""
 </script>
 """, height=0)
 
-# Hidden cycle button
-st.markdown('<style>div.stElementContainer:has(button[key="cycle_mode_btn"]){position:absolute!important;left:-9999px!important;height:0!important;overflow:hidden!important;}</style>', unsafe_allow_html=True)
-if st.button("CYCLE_MAP", key="cycle_mode_btn"):
-    st.session_state.color_by = next_mode
-    st.rerun()
+
 
 # ── DATA ──────────────────────────────────────────────────────────────
 @st.cache_data
@@ -287,6 +283,10 @@ with st.sidebar:
                                      default=list(CLUSTER_COLORS.keys()), key="sb_cl")
     geo_filter = st.multiselect("Geo Tip:", list(GEO_COLORS.keys()),
                                  default=list(GEO_COLORS.keys()), key="sb_geo")
+    # Hidden cycle button (JS finds this by text)
+    if st.button("CYCLE_MAP", key="cycle_mode_btn", use_container_width=True):
+        st.session_state.color_by = next_mode
+        st.rerun()
 
 # ── MAP ───────────────────────────────────────────────────────────────
 gdf_map = gdf[['mah_id','geometry']].merge(master, on='mah_id', how='left')

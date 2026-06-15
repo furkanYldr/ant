@@ -26,8 +26,8 @@ import pandas as pd
 import numpy as np
 from scipy.stats import rankdata
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-OUT_DIR  = os.path.join(BASE_DIR, "outputs")
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+OUT_DIR = os.path.join(_SCRIPT_DIR, "outputs")
 
 
 def quantile_rank(arr, lo=0, hi=100):

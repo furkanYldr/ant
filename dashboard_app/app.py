@@ -17,9 +17,10 @@ import os, sys
 sys.path.insert(0, os.path.dirname(__file__))
 from recommendation_engine import PERSONAS, build_sub_scores, recommend
 
-BASE = os.path.dirname(os.path.abspath(__file__))
-OUT = os.path.join(BASE, "outputs")
-GEO = os.path.join(BASE, "00_base_mahalle_final_913_clean.geojson")
+# Path: hem lokal hem Streamlit Cloud icin calisir
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+OUT = os.path.join(_SCRIPT_DIR, "outputs")
+GEO = os.path.join(_SCRIPT_DIR, "00_base_mahalle_final_913_clean.geojson")
 
 st.set_page_config(page_title="Antalya Mahalle", page_icon="🏘️", layout="wide",
                     initial_sidebar_state="collapsed")
@@ -28,16 +29,23 @@ st.set_page_config(page_title="Antalya Mahalle", page_icon="🏘️", layout="wi
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-.stMainBlockContainer {padding:0!important;max-width:100%!important;}
+/* Force dark theme everywhere (Streamlit Cloud fix) */
+.stApp, [data-testid="stAppViewContainer"] {background:#0e0e14!important;color:#d0d0d0!important;}
+.stMainBlockContainer {padding:0!important;max-width:100%!important;background:#0e0e14!important;}
 header[data-testid="stHeader"] {background:transparent!important;}
 div[data-testid="stToolbar"] {display:none!important;}
 section[data-testid="stSidebar"] {
-    background:rgba(12,12,18,0.96)!important;
+    background:rgba(12,12,18,0.97)!important;
     backdrop-filter:blur(16px);
     border-right:1px solid rgba(255,255,255,0.08);
     width:400px!important;
+    color:#d0d0d0!important;
 }
+section[data-testid="stSidebar"] * {color:inherit!important;}
 section[data-testid="stSidebar"] > div {padding-top:1.2rem;}
+section[data-testid="stSidebar"] [data-testid="stMetricValue"] {color:#fff!important;}
+section[data-testid="stSidebar"] .stSelectbox label,
+section[data-testid="stSidebar"] .stMultiSelect label {color:#aaa!important;}
 /* Hide ALL native sidebar toggle buttons */
 button[data-testid="stBaseButton-headerNoPadding"],
 button[data-testid="stSidebarCollapseButton"],
@@ -100,6 +108,7 @@ stc.html(f"""
 
 
 
+
 # ── DATA ──────────────────────────────────────────────────────────────
 @st.cache_data
 def load_all():
@@ -149,7 +158,15 @@ with st.sidebar:
     page = st.radio("Sekme:", ["🗺️ Genel","⚖️ Karsilastirma","💡 Oneri","📊 Kumeleme"],
                      label_visibility="collapsed")
     st.divider()
-    search = st.selectbox("🔍 Mahalle Ara:", [""] + name_options, key="detail_search")
+    srch_col, clr_col = st.columns([5,1])
+    with srch_col:
+        search = st.selectbox("🔍 Mahalle Ara:", [""] + name_options, key="detail_search")
+    with clr_col:
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("✕", key="clear_search", help="Aramayı temizle"):
+            st.session_state.detail_search = ""
+            st.session_state.pop('show_detail', None)
+            st.rerun()
     st.divider()
 
     # ── TAB CONTENT ───────────────────────────────────────────────
@@ -178,17 +195,22 @@ with st.sidebar:
     elif page == "⚖️ Karsilastirma":
         st.subheader("⚖️ Karşılaştırma")
         if 'compare_list' not in st.session_state: st.session_state.compare_list = []
+
+        def remove_item(idx):
+            if idx < len(st.session_state.compare_list):
+                st.session_state.compare_list.pop(idx)
+
         pick = st.selectbox("Mahalle seç:", [""] + name_options, key="cmp_pick")
         if st.button("➕ Ekle", type="primary"):
             if pick and pick not in st.session_state.compare_list and len(st.session_state.compare_list) < 5:
                 st.session_state.compare_list.append(pick)
+                st.rerun()
         if st.session_state.compare_list:
-            for i, name in enumerate(st.session_state.compare_list):
+            for i, name in enumerate(list(st.session_state.compare_list)):
                 cc1, cc2 = st.columns([5,1])
                 with cc1: st.write(f"**{i+1}.** {name}")
                 with cc2:
-                    if st.button("❌", key=f"rm_{i}"):
-                        st.session_state.compare_list.pop(i); st.rerun()
+                    st.button("❌", key=f"rm_{i}", on_click=remove_item, args=(i,))
         if len(st.session_state.compare_list) >= 2:
             sel_ids = [name_to_id.get(n) for n in st.session_state.compare_list if n in name_to_id]
             comp = master[master['mah_id'].isin(sel_ids)].copy()
@@ -335,6 +357,7 @@ detail_mah_id = None
 # From search
 if search and search in name_to_id:
     detail_mah_id = name_to_id[search]
+    st.session_state.show_detail = True
 
 # From map click (override)
 if map_data and map_data.get("last_object_clicked"):
@@ -346,6 +369,11 @@ if map_data and map_data.get("last_object_clicked"):
         hit = gdf_check[gdf_check['contains']]
         if len(hit) > 0:
             detail_mah_id = hit.iloc[0]['mah_id']
+            st.session_state.show_detail = True
+
+# Check if panel was closed
+if not st.session_state.get('show_detail', True):
+    detail_mah_id = None
 
 # ── DETAIL PANEL (bottom-right overlay - comprehensive) ───────────────
 if detail_mah_id:
@@ -362,8 +390,8 @@ if detail_mah_id:
     def divider():
         return '<div style="border-top:1px solid rgba(255,255,255,0.07);margin:8px 0;"></div>'
 
-    # ── Header
-    html = f"""<div style="position:fixed;bottom:16px;right:16px;width:400px;max-height:80vh;
+    # ── Header (with close button)
+    html = f"""<div id="detail-panel" style="position:fixed;bottom:16px;right:16px;width:400px;max-height:80vh;
         background:rgba(14,14,20,0.95);backdrop-filter:blur(16px);
         border:1px solid rgba(255,255,255,0.1);border-radius:14px;padding:16px 18px;
         z-index:99999;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,0.6);
@@ -371,7 +399,10 @@ if detail_mah_id:
         <div style="display:flex;justify-content:space-between;align-items:center;">
             <div><b style="color:#fff;font-size:1.1rem;">📍 {r['mah_name']}</b>
             <span style="color:#777;font-size:0.8rem;"> ({r['ilce_name']})</span></div>
-            <div style="background:{sc_col};color:#fff;padding:4px 12px;border-radius:8px;font-weight:700;font-size:1rem;">{sc:.0f}</div>
+            <div style="display:flex;gap:8px;align-items:center;">
+                <div style="background:{sc_col};color:#fff;padding:4px 12px;border-radius:8px;font-weight:700;font-size:1rem;">{sc:.0f}</div>
+                <div onclick="this.closest('#detail-panel').style.display='none'" style="cursor:pointer;color:#888;font-size:1.2rem;width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(255,255,255,0.06);transition:all 0.2s;" onmouseenter="this.style.background='rgba(255,255,255,0.15)';this.style.color='#fff'" onmouseleave="this.style.background='rgba(255,255,255,0.06)';this.style.color='#888'">✕</div>
+            </div>
         </div>
         <div style="margin-top:6px;">
             <span style="background:rgba(255,255,255,0.08);padding:3px 8px;border-radius:5px;font-size:0.75rem;margin-right:4px;">🏷️ {r.get('cluster_label','-')}</span>

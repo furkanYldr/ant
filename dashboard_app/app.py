@@ -22,7 +22,7 @@ _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(_SCRIPT_DIR, "outputs")
 GEO = os.path.join(_SCRIPT_DIR, "00_base_mahalle_final_913_clean.geojson")
 
-st.set_page_config(page_title="Antalya Mahalle", page_icon="🏘️", layout="wide",
+st.set_page_config(page_title="Antalya Neighborhood Livability", page_icon="🏘️", layout="wide",
                     initial_sidebar_state="collapsed")
 
 # ── CSS ───────────────────────────────────────────────────────────────
@@ -154,63 +154,62 @@ def score_color(s):
 
 # ── SIDEBAR ───────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("### 🏘️ Antalya Mahalle")
-    page = st.radio("Sekme:", ["🗺️ Genel","⚖️ Karsilastirma","💡 Oneri","📊 Kumeleme"],
+    st.markdown("### 🏘️ Antalya Neighborhoods")
+    page = st.radio("Tab:", ["🗺️ Overview","⚖️ Compare","💡 Recommend","📊 Clusters"],
                      label_visibility="collapsed")
     st.divider()
     srch_col, clr_col = st.columns([5,1])
     with srch_col:
-        search = st.selectbox("🔍 Mahalle Ara:", [""] + name_options, key="detail_search")
+        search = st.selectbox("🔍 Search Neighborhood:", [""] + name_options, key="detail_search")
     with clr_col:
         st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("✕", key="clear_search", help="Aramayı temizle"):
+        if st.button("✕", key="clear_search", help="Clear search"):
             st.session_state.detail_search = ""
             st.session_state.pop('show_detail', None)
             st.rerun()
     st.divider()
 
     # ── TAB CONTENT ───────────────────────────────────────────────
-    if page == "🗺️ Genel":
-        st.subheader("📊 Genel Bakış")
-        st.caption(f"Toplam: {len(master)} mahalle")
+    if page == "🗺️ Overview":
+        st.subheader("📊 Overview")
+        st.caption(f"Total: {len(master)} neighborhoods")
         mc1, mc2 = st.columns(2)
-        with mc1: st.metric("Ort. Skor", f"{master['score_final'].mean():.1f}")
-        with mc2: st.metric("Max Skor", f"{master['score_final'].max():.1f}")
+        with mc1: st.metric("Avg. Score", f"{master['score_final'].mean():.1f}")
+        with mc2: st.metric("Max Score", f"{master['score_final'].max():.1f}")
         if 'pop' in master.columns:
-            st.metric("Toplam Nüfus", f"{master['pop'].sum():,.0f}")
-        st.markdown("**Küme Dağılımı**")
+            st.metric("Total Population", f"{master['pop'].sum():,.0f}")
+        st.markdown("**Cluster Distribution**")
         c_order = ['A - En Iyi','B - Iyi','C - Ortanin Ustu','D - Orta','E - Dusuk','F - En Dusuk']
         rows = []
         for cl in c_order:
             sub = master[master['cluster_label']==cl]
             if len(sub)==0: continue
-            rows.append({'Küme':cl,'N':len(sub),'Skor':f"{sub['score_final'].mean():.0f}"})
+            rows.append({'Cluster':cl,'N':len(sub),'Score':f"{sub['score_final'].mean():.0f}"})
         st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
         fig_hist = px.histogram(master, x='score_final', nbins=30, color='cluster_label',
                                  color_discrete_map=CLUSTER_COLORS, category_orders={'cluster_label':c_order})
-        fig_hist.update_layout(height=250, xaxis_title="Skor", yaxis_title="Sayı",
+        fig_hist.update_layout(height=250, xaxis_title="Score", yaxis_title="Count",
                                 margin=dict(l=0,r=0,t=10,b=30))
         st.plotly_chart(fig_hist, use_container_width=True)
 
-    elif page == "⚖️ Karsilastirma":
-        st.subheader("⚖️ Karşılaştırma")
+    elif page == "⚖️ Compare":
+        st.subheader("⚖️ Comparison")
         if 'compare_list' not in st.session_state: st.session_state.compare_list = []
 
-        def remove_item(idx):
-            if idx < len(st.session_state.compare_list):
-                st.session_state.compare_list.pop(idx)
-
-        pick = st.selectbox("Mahalle seç:", [""] + name_options, key="cmp_pick")
-        if st.button("➕ Ekle", type="primary"):
+        pick = st.selectbox("Select neighborhood:", [""] + name_options, key="cmp_pick")
+        if st.button("➕ Add", type="primary"):
             if pick and pick not in st.session_state.compare_list and len(st.session_state.compare_list) < 5:
                 st.session_state.compare_list.append(pick)
                 st.rerun()
+        # Show selected neighborhoods — click X to remove
         if st.session_state.compare_list:
-            for i, name in enumerate(list(st.session_state.compare_list)):
-                cc1, cc2 = st.columns([5,1])
-                with cc1: st.write(f"**{i+1}.** {name}")
-                with cc2:
-                    st.button("❌", key=f"rm_{i}", on_click=remove_item, args=(i,))
+            kept = st.multiselect("Selected (click X to remove):",
+                                   st.session_state.compare_list,
+                                   default=st.session_state.compare_list,
+                                   key="cmp_kept")
+            if set(kept) != set(st.session_state.compare_list):
+                st.session_state.compare_list = list(kept)
+                st.rerun()
         if len(st.session_state.compare_list) >= 2:
             sel_ids = [name_to_id.get(n) for n in st.session_state.compare_list if n in name_to_id]
             comp = master[master['mah_id'].isin(sel_ids)].copy()
@@ -230,36 +229,36 @@ with st.sidebar:
                                   margin=dict(l=20,r=20,t=20,b=20))
                 st.plotly_chart(fig, use_container_width=True)
         else:
-            st.info("En az 2 mahalle ekleyin.")
+            st.info("Add at least 2 neighborhoods.")
 
-    elif page == "💡 Oneri":
-        st.subheader("💡 Mahalle Öner")
-        tab1, tab2 = st.tabs(["Hazır Profil", "Özel Filtre"])
+    elif page == "💡 Recommend":
+        st.subheader("💡 Neighborhood Recommender")
+        tab1, tab2 = st.tabs(["Ready Profiles", "Custom Filter"])
         with tab1:
-            sel_p = st.selectbox("Profil:", list(PERSONAS.keys()))
+            sel_p = st.selectbox("Profile:", list(PERSONAS.keys()))
             st.info(PERSONAS[sel_p]['description'])
-            ilce_f = st.selectbox("İlçe:", ['Tümü'] + sorted(raw_df['ilce_name'].dropna().unique()))
-            top_n = st.slider("Sayı:", 5, 20, 10)
-            if st.button("Önerileri Göster", type="primary", key="btn_p"):
+            ilce_f = st.selectbox("District:", ['All'] + sorted(raw_df['ilce_name'].dropna().unique()))
+            top_n = st.slider("Count:", 5, 20, 10)
+            if st.button("Show Results", type="primary", key="btn_p"):
                 res = recommend(raw_df, sel_p, top_n=top_n,
-                                ilce_filter=None if ilce_f=='Tümü' else ilce_f)
+                                ilce_filter=None if ilce_f=='All' else ilce_f)
                 for _, r in res.iterrows():
                     st.write(f"**#{int(r['sira'])}** {r['mah_name']} ({r['ilce_name']}) — **{r['persona_score']:.0f}**")
         with tab2:
-            st.markdown("**Kendi filtrelerinizi ayarlayın**")
+            st.markdown("**Set your own preferences**")
             sub_scores = build_sub_scores(raw_df)
-            w_opts = {'education_score':'Eğitim','health_score':'Sağlık','green_score':'Yeşil',
-                       'quiet_score':'Sessizlik','safety_score':'Güvenlik','transport_score':'Ulaşım',
-                       'walkability_score':'Yürünebilirlik','social_score':'Sosyal','affordability_score':'Uygun Fiyat',
-                       'coastal_proximity':'Sahil'}
+            w_opts = {'education_score':'Education','health_score':'Healthcare','green_score':'Green Area',
+                       'quiet_score':'Quietness','safety_score':'Safety','transport_score':'Transit',
+                       'walkability_score':'Walkability','social_score':'Social','affordability_score':'Affordability',
+                       'coastal_proximity':'Coastal'}
             weights = {}
             wc = st.columns(2)
             for i, (wk, wl) in enumerate(w_opts.items()):
                 with wc[i%2]: weights[wk] = st.slider(wl, 0, 10, 5, key=f"w_{wk}")
             fc1, fc2 = st.columns(2)
-            with fc1: ilce_f2 = st.multiselect("İlçe:", sorted(raw_df['ilce_name'].dropna().unique()), key="of_ilce")
-            with fc2: min_score2 = st.slider("Min Skor:", 0, 80, 0)
-            if st.button("Filtrele", type="primary", key="btn_o"):
+            with fc1: ilce_f2 = st.multiselect("District:", sorted(raw_df['ilce_name'].dropna().unique()), key="of_ilce")
+            with fc2: min_score2 = st.slider("Min Score:", 0, 80, 0)
+            if st.button("Filter", type="primary", key="btn_o"):
                 mask = np.ones(len(raw_df), dtype=bool)
                 if ilce_f2: mask &= raw_df['ilce_name'].isin(ilce_f2)
                 if min_score2 > 0:
@@ -272,23 +271,23 @@ with st.sidebar:
                     if wk in sub_scores and wv > 0: custom += sub_scores[wk] * (wv / total_w)
                 score_m = np.where(mask, custom, -1)
                 top_idx = np.argsort(-score_m)[:15]
-                st.write(f"**{mask.sum()} mahalle uygun.** En iyi 15:")
+                st.write(f"**{mask.sum()} neighborhoods matched.** Top 15:")
                 for rank, idx in enumerate(top_idx, 1):
                     if not mask[idx]: break
                     r = raw_df.iloc[idx]
                     st.write(f"**#{rank}** {r['mah_name']} ({r['ilce_name']}) — {custom[idx]:.0f}")
 
-    elif page == "📊 Kumeleme":
-        st.subheader("📊 Kümeleme (6-Tier)")
-        CDESC = {'A - En Iyi':"Merkezi, hizmet yoğun.","B - Iyi":"Şehir sınırı, orta-yüksek.",
-                  'C - Ortanin Ustu':"Sahil/turistik.",'D - Orta':"Küçük kasaba.",
-                  'E - Dusuk':"Kırsal, sınırlı.",'F - En Dusuk':"Dağlık, erişim zor."}
+    elif page == "📊 Clusters":
+        st.subheader("📊 Clustering (6-Tier)")
+        CDESC = {'A - En Iyi':"Central, service-dense, high population.","B - Iyi":"City fringe, mid-high accessibility.",
+                  'C - Ortanin Ustu':"Coastal / touristic areas.",'D - Orta':"Small towns.",
+                  'E - Dusuk':"Rural, limited infrastructure.",'F - En Dusuk':"Mountainous, hard to access."}
         c_order = ['A - En Iyi','B - Iyi','C - Ortanin Ustu','D - Orta','E - Dusuk','F - En Dusuk']
         for cl in c_order:
             sub = master[master['cluster_label']==cl]
             if len(sub)==0: continue
             clr = CLUSTER_COLORS.get(cl,'#888')
-            with st.expander(f"{cl} ({len(sub)} mah.)", expanded=(cl=='A - En Iyi')):
+            with st.expander(f"{cl} ({len(sub)} nbhd.)", expanded=(cl=='A - En Iyi')):
                 st.caption(CDESC.get(cl,''))
                 if block_cols:
                     avg = sub[block_cols].mean()
@@ -300,14 +299,18 @@ with st.sidebar:
 
     # ── HARITA AYARLARI (sidebar en alt) ────────────────────────────
     st.divider()
-    st.markdown("**🎨 Harita Filtreleri**")
-    cluster_filter = st.multiselect("Küme:", list(CLUSTER_COLORS.keys()),
+    st.markdown("**🎨 Map Filters**")
+    cluster_filter = st.multiselect("Cluster:", list(CLUSTER_COLORS.keys()),
                                      default=list(CLUSTER_COLORS.keys()), key="sb_cl")
-    geo_filter = st.multiselect("Geo Tip:", list(GEO_COLORS.keys()),
+    geo_filter = st.multiselect("Geo Type:", list(GEO_COLORS.keys()),
                                  default=list(GEO_COLORS.keys()), key="sb_geo")
     # Hidden cycle button (JS finds this by text)
     if st.button("CYCLE_MAP", key="cycle_mode_btn", use_container_width=True):
         st.session_state.color_by = next_mode
+        st.rerun()
+    # Hidden close-detail button (JS finds this by text)
+    if st.button("CLOSE_DETAIL", key="close_detail_btn", use_container_width=True):
+        st.session_state.detail_closed_click = (st.session_state.get('detail_closed_click', 0) or 0) + 1
         st.rerun()
 
 # ── MAP ───────────────────────────────────────────────────────────────
@@ -335,14 +338,14 @@ def build_map():
     tf = [f for f in ['mah_name','ilce_name','score_final','cluster_label','geo_type'] if f in gdf_show.columns]
     folium.GeoJson(gdf_show, style_function=style_fn,
         tooltip=folium.GeoJsonTooltip(fields=tf,
-            aliases=['Mahalle:','İlçe:','Skor:','Küme:','Tip:'],
+            aliases=['Neighborhood:','District:','Score:','Cluster:','Type:'],
             style="font-size:12px;padding:8px;background:rgba(0,0,0,0.85);color:#fff;border-radius:8px;border:1px solid rgba(255,255,255,0.15);")
     ).add_to(m)
     # Highlight searched
     if highlight_geom is not None and len(highlight_geom) > 0:
         folium.GeoJson(highlight_geom,
             style_function=lambda x: {'fillColor':'#ffe600','color':'#ffe600','weight':3,'fillOpacity':0.45,'dashArray':'6'},
-            name="Aranan"
+            name="Searched"
         ).add_to(m)
         b = highlight_geom.total_bounds
         m.fit_bounds([[b[1], b[0]], [b[3], b[2]]])
@@ -353,30 +356,39 @@ map_data = st_folium(build_map(), width=None, height=930, key="main_map",
 
 # ── FIND CLICKED MAHALLE ──────────────────────────────────────────────
 detail_mah_id = None
+panel_visible = True
 
 # From search
 if search and search in name_to_id:
     detail_mah_id = name_to_id[search]
-    st.session_state.show_detail = True
+    st.session_state.last_detail_source = 'search'
 
 # From map click (override)
 if map_data and map_data.get("last_object_clicked"):
     click = map_data["last_object_clicked"]
+    click_key = f"{click.get('lat',0):.6f}_{click.get('lng',0):.6f}" if click else ''
     if click and 'lat' in click and 'lng' in click:
+        # Yeni tiklama mi kontrol et
+        if click_key != st.session_state.get('last_click_key', ''):
+            st.session_state.last_click_key = click_key
+            st.session_state.pop('detail_closed_click', None)  # Panel tekrar acilsin
         pt = Point(click['lng'], click['lat'])
         gdf_check = gdf_map.copy()
         gdf_check['contains'] = gdf_check.geometry.contains(pt)
         hit = gdf_check[gdf_check['contains']]
         if len(hit) > 0:
             detail_mah_id = hit.iloc[0]['mah_id']
-            st.session_state.show_detail = True
+            st.session_state.last_detail_source = 'map'
 
-# Check if panel was closed
-if not st.session_state.get('show_detail', True):
-    detail_mah_id = None
+# Panel kapali mi? (gizli buton tiklanmissa)
+if st.session_state.get('detail_closed_click', 0):
+    panel_visible = False
+    # Ama arama secildiyse her zaman goster
+    if st.session_state.get('last_detail_source') == 'search' and search:
+        panel_visible = True
 
 # ── DETAIL PANEL (bottom-right overlay - comprehensive) ───────────────
-if detail_mah_id:
+if detail_mah_id and panel_visible:
     r = master[master['mah_id']==detail_mah_id].iloc[0]
     raw_r = raw_df[raw_df['mah_id']==detail_mah_id].iloc[0]
     sc = r['score_final']
@@ -390,6 +402,9 @@ if detail_mah_id:
     def divider():
         return '<div style="border-top:1px solid rgba(255,255,255,0.07);margin:8px 0;"></div>'
 
+    # Close button - onclick JS ile ekleniyor (stc.html icinde)
+    close_btn = '<div id="detail-close-btn" style="cursor:pointer;color:#888;font-size:1.2rem;width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(255,255,255,0.06);transition:all 0.2s;">✕</div>'
+
     # ── Header (with close button)
     html = f"""<div id="detail-panel" style="position:fixed;bottom:16px;right:16px;width:400px;max-height:80vh;
         background:rgba(14,14,20,0.95);backdrop-filter:blur(16px);
@@ -401,7 +416,7 @@ if detail_mah_id:
             <span style="color:#777;font-size:0.8rem;"> ({r['ilce_name']})</span></div>
             <div style="display:flex;gap:8px;align-items:center;">
                 <div style="background:{sc_col};color:#fff;padding:4px 12px;border-radius:8px;font-weight:700;font-size:1rem;">{sc:.0f}</div>
-                <div onclick="this.closest('#detail-panel').style.display='none'" style="cursor:pointer;color:#888;font-size:1.2rem;width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(255,255,255,0.06);transition:all 0.2s;" onmouseenter="this.style.background='rgba(255,255,255,0.15)';this.style.color='#fff'" onmouseleave="this.style.background='rgba(255,255,255,0.06)';this.style.color='#888'">✕</div>
+                {close_btn}
             </div>
         </div>
         <div style="margin-top:6px;">
@@ -415,7 +430,7 @@ if detail_mah_id:
         ar = '▲' if c>0 else '▼' if c<0 else '▸'
         col = '#4caf50' if c>0 else '#f44336' if c<0 else '#999'
         html += f"""<div style="margin-top:8px;padding:8px 12px;background:rgba(255,255,255,0.05);border-radius:8px;">
-            <span style="color:#aaa;font-size:0.75rem;">5 Yıllık Tahmin</span>
+            <span style="color:#aaa;font-size:0.75rem;">5-Year Forecast</span>
             <b style="color:{col};margin-left:6px;font-size:1rem;">{r['predicted_score_5y']:.1f}</b>
             <span style="color:{col};font-size:0.85rem;"> {ar} {abs(c):.1f}</span>
             <span style="color:#aaa;margin-left:8px;font-size:0.75rem;">| {r.get('future_class','-')}</span>
@@ -424,38 +439,44 @@ if detail_mah_id:
     html += divider()
 
     # ── Temel bilgiler
-    html += section('📋 Temel Bilgiler')
+    html += section('📋 Key Facts')
     raw_items = [
-        ('Nüfus', f"{raw_r.get('pop',0):,.0f}"),
-        ('Alan', f"{raw_r.get('area_m2_gee',0)/1e6:.2f} km²"),
-        ('Rakım', f"{raw_r.get('mean_elevation_m',0):.0f} m"),
-        ('Nüfus Yoğ.', f"{raw_r.get('ghsl_pop_density_2020',0):.0f}/km²"),
-        ('POI Yoğ.', f"{raw_r.get('poi_density_per_km2',0):.1f}"),
-        ('POI Çeşitlilik', f"{raw_r.get('poi_type_entropy_norm',0):.2f}"),
-        ('Yeşil Oran', f"%{raw_r.get('green_natural_share',0)*100:.1f}"),
-        ('Ağaç Oran', f"%{raw_r.get('tree_share',0)*100:.1f}"),
-        ('Gürültü', f"{raw_r.get('noise_density_per_km2',0):.1f}"),
-        ('Yaz Sıcaklık', f"{raw_r.get('mean_summer_lst_c',0):.1f}°C"),
-        ('Bina Yük.', f"{raw_r.get('built_height_2018_mean',0):.1f} m"),
-        ('Sokak Yoğ.', f"{raw_r.get('street_density_km_per_km2',0):.1f} km/km²"),
+        ('Population', f"{raw_r.get('pop',0):,.0f}"),
+        ('Area', f"{raw_r.get('area_m2_gee',0)/1e6:.2f} km²"),
+        ('Elevation', f"{raw_r.get('mean_elevation_m',0):.0f} m"),
+        ('Pop. Density', f"{raw_r.get('ghsl_pop_density_2020',0):.0f}/km²"),
+        ('POI Density', f"{raw_r.get('poi_density_per_km2',0):.1f}"),
+        ('POI Diversity', f"{raw_r.get('poi_type_entropy_norm',0):.2f}"),
+        ('Green Ratio', f"{raw_r.get('green_natural_share',0)*100:.1f}%"),
+        ('Tree Cover', f"{raw_r.get('tree_share',0)*100:.1f}%"),
+        ('Noise', f"{raw_r.get('noise_density_per_km2',0):.1f}"),
+        ('Summer Temp', f"{raw_r.get('mean_summer_lst_c',0):.1f}°C"),
+        ('Bldg Height', f"{raw_r.get('built_height_2018_mean',0):.1f} m"),
+        ('Street Dens.', f"{raw_r.get('street_density_km_per_km2',0):.1f} km/km²"),
     ]
     html += ''.join([m(l,v) for l,v in raw_items])
 
-    # ── Block scores
+    # ── Block scores (diverging bar: negatif=kirmizi sola, pozitif=yesil saga)
     if block_cols:
         bvals = {c: r.get(c,0) for c in block_cols if pd.notna(r.get(c))}
         if bvals:
-            html += divider() + section('📊 Blok Skorları')
-            max_v = max(bvals.values()) if max(bvals.values()) > 0 else 1
+            html += divider() + section('📊 Block Scores')
+            SCALE = 10.0  # sabit olcek: -10 ile +10 arasi
             for k, v in bvals.items():
-                pct = min(100, v / max_v * 100)
                 label = k.replace('_',' ').title()
-                html += f'<div style="margin:4px 0;"><div style="display:flex;justify-content:space-between;font-size:0.75rem;"><span style="color:#bbb;">{label}</span><span style="color:#64b5f6;font-weight:600;">{v:.1f}</span></div><div style="height:6px;background:rgba(255,255,255,0.08);border-radius:3px;margin-top:2px;"><div style="height:100%;width:{pct}%;background:linear-gradient(to right,#1565c0,#64b5f6);border-radius:3px;"></div></div></div>'
+                pct = min(50, abs(v) / SCALE * 50)  # max %50 (bir yon)
+                val_color = '#4caf50' if v >= 0 else '#f44336'
+                val_label_color = '#81c784' if v >= 0 else '#ef9a9a'
+                if v >= 0:
+                    bar_html = f'<div style="position:relative;height:8px;background:rgba(255,255,255,0.06);border-radius:4px;"><div style="position:absolute;left:50%;height:100%;width:{pct}%;background:{val_color};border-radius:0 4px 4px 0;"></div><div style="position:absolute;left:50%;top:-2px;width:1px;height:12px;background:rgba(255,255,255,0.2);"></div></div>'
+                else:
+                    bar_html = f'<div style="position:relative;height:8px;background:rgba(255,255,255,0.06);border-radius:4px;"><div style="position:absolute;right:50%;height:100%;width:{pct}%;background:{val_color};border-radius:4px 0 0 4px;"></div><div style="position:absolute;left:50%;top:-2px;width:1px;height:12px;background:rgba(255,255,255,0.2);"></div></div>'
+                html += f'<div style="margin:5px 0;"><div style="display:flex;justify-content:space-between;font-size:0.75rem;"><span style="color:#bbb;">{label}</span><span style="color:{val_label_color};font-weight:600;">{v:+.1f}</span></div>{bar_html}</div>'
 
     # ── Sub scores
     sub_cols_show = [c for c in r.index if c.endswith('_score') and c not in ['score_final','score_within_type'] and pd.notna(r.get(c))]
     if sub_cols_show:
-        html += divider() + section('📈 Alt Skorlar (0-100)')
+        html += divider() + section('📈 Sub-Scores (0-100)')
         for c in sub_cols_show:
             v = r[c]
             label = c.replace('_score','').replace('_',' ').title()
@@ -465,20 +486,52 @@ if detail_mah_id:
     # ── POI counts
     poi_vals = {poi_labels[c]: int(raw_r.get(c,0)) for c in poi_cols if raw_r.get(c,0) > 0}
     if poi_vals:
-        html += divider() + section(f'📍 POI Sayıları ({len(poi_vals)} tür)')
+        html += divider() + section(f'📍 POI Counts ({len(poi_vals)} types)')
         for k, v in sorted(poi_vals.items(), key=lambda x: -x[1]):
             html += m(k, str(v))
 
     # ── Walkability
     walk_cols = [c for c in raw_r.index if c.startswith('walk_') and raw_r.get(c,0) > 0]
     if walk_cols:
-        html += divider() + section('🚶 Yürünebilirlik')
+        html += divider() + section('🚶 Walkability')
         for c in walk_cols[:8]:
-            label = c.replace('walk_','').replace('_within_','<').replace('min_share','dk').replace('min_mean','dk').replace('_',' ').title()
+            label = c.replace('walk_','').replace('_within_','<').replace('min_share','min').replace('min_mean','min').replace('_',' ').title()
             v = raw_r.get(c, 0)
             if isinstance(v, float): v_str = f"{v:.2f}"
             else: v_str = str(v)
             html += m(label, v_str)
 
     html += '</div>'
-    st.markdown(html, unsafe_allow_html=True)
+    # Escape for JS string (tek tirnak icindeki tek tirnaklari escape et)
+    html_escaped = html.replace('\\', '\\\\').replace("'", "\\'").replace('\n', ' ')
+    # stc.html ile parent document'a ekle — hamburger butonu ile AYNI mekanizma
+    # onclick CALISIR cunku bu gercek DOM elementi, st.markdown degil
+    stc.html(f"""
+    <script>
+    (function() {{
+        var pd = window.parent.document;
+        var old = pd.getElementById('detail-panel');
+        if (old) old.remove();
+        var wrapper = pd.createElement('div');
+        wrapper.innerHTML = '{html_escaped}';
+        var panel = wrapper.firstChild;
+        pd.body.appendChild(panel);
+        // Close button
+        var closeBtn = panel.querySelector('#detail-close-btn');
+        if (closeBtn) {{
+            closeBtn.onclick = function() {{
+                panel.remove();
+            }};
+            closeBtn.onmouseenter = function() {{
+                this.style.background = 'rgba(255,255,255,0.15)';
+                this.style.color = '#fff';
+            }};
+            closeBtn.onmouseleave = function() {{
+                this.style.background = 'rgba(255,255,255,0.06)';
+                this.style.color = '#888';
+            }};
+        }}
+    }})();
+    </script>
+    """, height=0)
+

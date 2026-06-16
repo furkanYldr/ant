@@ -57,6 +57,7 @@ iframe {width:100%!important;border:none!important;}
 ::-webkit-scrollbar-thumb {background:rgba(255,255,255,0.15);border-radius:3px;}
 @media (max-width:768px) {
     section[data-testid="stSidebar"] {width:100vw!important;}
+    #detail-panel {left:50%!important;right:auto!important;transform:translateX(-50%)!important;width:calc(100vw - 24px)!important;max-height:60vh!important;bottom:8px!important;font-size:0.85rem!important;}
 }
 </style>
 """, unsafe_allow_html=True)
@@ -141,6 +142,19 @@ CLUSTER_COLORS = {'A - En Iyi':'#00c853','B - Iyi':'#2979ff','C - Ortanin Ustu':
 GEO_COLORS = {'Sehir Merkezi':'#e53935','Sahil / Turistik':'#1e88e5','Sehir Siniri':'#43a047',
               'Turistik Sahil Kasabasi':'#00acc1','Kucuk Kasaba':'#fb8c00',
               'Kirsal / Ovacik':'#8d6e63','Daglık / Yukari Yerlesim':'#757575'}
+# Translation maps for display
+TR_EN = {
+    'A - En Iyi':'A - Best','B - Iyi':'B - Good','C - Ortanin Ustu':'C - Above Avg',
+    'D - Orta':'D - Average','E - Dusuk':'E - Low','F - En Dusuk':'F - Lowest',
+    'Sehir Merkezi':'City Center','Sahil / Turistik':'Coastal / Touristic',
+    'Sehir Siniri':'City Fringe','Turistik Sahil Kasabasi':'Touristic Coastal Town',
+    'Kucuk Kasaba':'Small Town','Kirsal / Ovacik':'Rural / Flatland',
+    'Daglık / Yukari Yerlesim':'Mountainous / Highland',
+    'Yuksek Potansiyel':'High Potential','Orta Potansiyel':'Mid Potential',
+    'Dusuk Potansiyel':'Low Potential','Stabil':'Stable','Duragan':'Stagnant',
+}
+def tr(text):
+    return TR_EN.get(str(text), str(text))
 
 def score_color(s):
     if s >= 70: return '#1a9641'
@@ -184,7 +198,7 @@ with st.sidebar:
         for cl in c_order:
             sub = master[master['cluster_label']==cl]
             if len(sub)==0: continue
-            rows.append({'Cluster':cl,'N':len(sub),'Score':f"{sub['score_final'].mean():.0f}"})
+            rows.append({'Cluster':tr(cl),'N':len(sub),'Score':f"{sub['score_final'].mean():.0f}"})
         st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
         fig_hist = px.histogram(master, x='score_final', nbins=30, color='cluster_label',
                                  color_discrete_map=CLUSTER_COLORS, category_orders={'cluster_label':c_order})
@@ -287,7 +301,7 @@ with st.sidebar:
             sub = master[master['cluster_label']==cl]
             if len(sub)==0: continue
             clr = CLUSTER_COLORS.get(cl,'#888')
-            with st.expander(f"{cl} ({len(sub)} nbhd.)", expanded=(cl=='A - En Iyi')):
+            with st.expander(f"{tr(cl)} ({len(sub)} nbhd.)", expanded=(cl=='A - En Iyi')):
                 st.caption(CDESC.get(cl,''))
                 if block_cols:
                     avg = sub[block_cols].mean()
@@ -406,7 +420,7 @@ if detail_mah_id and panel_visible:
     close_btn = '<div id="detail-close-btn" style="cursor:pointer;color:#888;font-size:1.2rem;width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(255,255,255,0.06);transition:all 0.2s;">✕</div>'
 
     # ── Header (with close button)
-    html = f"""<div id="detail-panel" style="position:fixed;bottom:16px;right:16px;width:400px;max-height:80vh;
+    html = f"""<div id="detail-panel" style="position:fixed;bottom:16px;right:16px;width:400px;max-width:calc(100vw - 32px);max-height:80vh;
         background:rgba(14,14,20,0.95);backdrop-filter:blur(16px);
         border:1px solid rgba(255,255,255,0.1);border-radius:14px;padding:16px 18px;
         z-index:99999;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,0.6);
@@ -420,8 +434,8 @@ if detail_mah_id and panel_visible:
             </div>
         </div>
         <div style="margin-top:6px;">
-            <span style="background:rgba(255,255,255,0.08);padding:3px 8px;border-radius:5px;font-size:0.75rem;margin-right:4px;">🏷️ {r.get('cluster_label','-')}</span>
-            <span style="background:rgba(255,255,255,0.08);padding:3px 8px;border-radius:5px;font-size:0.75rem;">🌍 {r.get('geo_type','-')}</span>
+            <span style="background:rgba(255,255,255,0.08);padding:3px 8px;border-radius:5px;font-size:0.75rem;margin-right:4px;">🏷️ {tr(r.get('cluster_label','-'))}</span>
+            <span style="background:rgba(255,255,255,0.08);padding:3px 8px;border-radius:5px;font-size:0.75rem;">🌍 {tr(r.get('geo_type','-'))}</span>
         </div>"""
 
     # ── 5Y Future prediction
@@ -433,7 +447,7 @@ if detail_mah_id and panel_visible:
             <span style="color:#aaa;font-size:0.75rem;">5-Year Forecast</span>
             <b style="color:{col};margin-left:6px;font-size:1rem;">{r['predicted_score_5y']:.1f}</b>
             <span style="color:{col};font-size:0.85rem;"> {ar} {abs(c):.1f}</span>
-            <span style="color:#aaa;margin-left:8px;font-size:0.75rem;">| {r.get('future_class','-')}</span>
+            <span style="color:#aaa;margin-left:8px;font-size:0.75rem;">| {tr(r.get('future_class','-'))}</span>
         </div>"""
 
     html += divider()

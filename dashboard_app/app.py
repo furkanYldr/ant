@@ -46,6 +46,27 @@ section[data-testid="stSidebar"] > div {padding-top:1.2rem;}
 section[data-testid="stSidebar"] [data-testid="stMetricValue"] {color:#fff!important;}
 section[data-testid="stSidebar"] .stSelectbox label,
 section[data-testid="stSidebar"] .stMultiSelect label {color:#aaa!important;}
+/* Sidebar widget dark backgrounds */
+section[data-testid="stSidebar"] [data-baseweb="select"],
+section[data-testid="stSidebar"] [data-baseweb="input"],
+section[data-testid="stSidebar"] [data-baseweb="popover"] {background:#1a1a24!important;border-color:rgba(255,255,255,0.1)!important;}
+section[data-testid="stSidebar"] [data-baseweb="tag"] {background:#1565c0!important;color:#fff!important;}
+section[data-testid="stSidebar"] [data-baseweb="menu"],
+section[data-testid="stSidebar"] [role="listbox"] {background:#1a1a24!important;}
+section[data-testid="stSidebar"] [role="option"] {background:#1a1a24!important;color:#d0d0d0!important;}
+section[data-testid="stSidebar"] [role="option"]:hover {background:#252536!important;}
+section[data-testid="stSidebar"] [data-testid="stExpander"] {background:#15151f!important;border:1px solid rgba(255,255,255,0.08)!important;border-radius:8px!important;}
+section[data-testid="stSidebar"] [data-testid="stDataFrame"],
+section[data-testid="stSidebar"] .stDataFrame {background:#15151f!important;}
+section[data-testid="stSidebar"] [data-testid="stDataFrame"] * {background:transparent!important;color:#d0d0d0!important;}
+section[data-testid="stSidebar"] [data-testid="stAlert"] {background:#15151f!important;border-color:rgba(255,255,255,0.08)!important;}
+section[data-testid="stSidebar"] [data-testid="stAlert"] p {color:#ccc!important;}
+section[data-testid="stSidebar"] .stTabs [data-baseweb="tab"] {background:transparent!important;color:#999!important;}
+section[data-testid="stSidebar"] .stTabs [aria-selected="true"] {color:#64b5f6!important;border-bottom-color:#64b5f6!important;}
+section[data-testid="stSidebar"] .stTabs [data-baseweb="tab-panel"] {background:transparent!important;}
+section[data-testid="stSidebar"] button {background:#1a1a24!important;border-color:rgba(255,255,255,0.1)!important;color:#d0d0d0!important;}
+section[data-testid="stSidebar"] button[data-testid="stBaseButton-primary"] {background:#1565c0!important;color:#fff!important;border:none!important;}
+section[data-testid="stSidebar"] [data-testid="stSlider"] * {color:#ccc!important;}
 /* Hide ALL native sidebar toggle buttons */
 button[data-testid="stBaseButton-headerNoPadding"],
 button[data-testid="stSidebarCollapseButton"],
@@ -134,16 +155,8 @@ poi_cols = sorted([c for c in raw_df.columns if c.startswith('type_')])
 poi_labels = {c: c.replace('type_','').replace('_count','').replace('_',' ').title() for c in poi_cols}
 block_cols = [c for c in ['demographics','built_activity','accessibility','morphology','environment','seasonality'] if c in master.columns]
 
-name_options = sorted([f"{r['mah_name']} ({r['ilce_name']})" for _, r in master[['mah_name','ilce_name']].drop_duplicates().iterrows()])
-name_to_id = {f"{r['mah_name']} ({r['ilce_name']})": r['mah_id'] for _, r in master.iterrows()}
-
-CLUSTER_COLORS = {'A - En Iyi':'#00c853','B - Iyi':'#2979ff','C - Ortanin Ustu':'#ffd600',
-                  'D - Orta':'#ff6d00','E - Dusuk':'#aa00ff','F - En Dusuk':'#d50000'}
-GEO_COLORS = {'Sehir Merkezi':'#e53935','Sahil / Turistik':'#1e88e5','Sehir Siniri':'#43a047',
-              'Turistik Sahil Kasabasi':'#00acc1','Kucuk Kasaba':'#fb8c00',
-              'Kirsal / Ovacik':'#8d6e63','Daglık / Yukari Yerlesim':'#757575'}
-# Translation maps for display
-TR_EN = {
+# ── Translate Turkish labels to English in data ──
+_LABEL_TR_EN = {
     'A - En Iyi':'A - Best','B - Iyi':'B - Good','C - Ortanin Ustu':'C - Above Avg',
     'D - Orta':'D - Average','E - Dusuk':'E - Low','F - En Dusuk':'F - Lowest',
     'Sehir Merkezi':'City Center','Sahil / Turistik':'Coastal / Touristic',
@@ -153,8 +166,18 @@ TR_EN = {
     'Yuksek Potansiyel':'High Potential','Orta Potansiyel':'Mid Potential',
     'Dusuk Potansiyel':'Low Potential','Stabil':'Stable','Duragan':'Stagnant',
 }
-def tr(text):
-    return TR_EN.get(str(text), str(text))
+for col in ['cluster_label','geo_type','future_class']:
+    if col in master.columns:
+        master[col] = master[col].map(lambda x: _LABEL_TR_EN.get(str(x), x) if pd.notna(x) else x)
+
+name_options = sorted([f"{r['mah_name']} ({r['ilce_name']})" for _, r in master[['mah_name','ilce_name']].drop_duplicates().iterrows()])
+name_to_id = {f"{r['mah_name']} ({r['ilce_name']})": r['mah_id'] for _, r in master.iterrows()}
+
+CLUSTER_COLORS = {'A - Best':'#00c853','B - Good':'#2979ff','C - Above Avg':'#ffd600',
+                  'D - Average':'#ff6d00','E - Low':'#aa00ff','F - Lowest':'#d50000'}
+GEO_COLORS = {'City Center':'#e53935','Coastal / Touristic':'#1e88e5','City Fringe':'#43a047',
+              'Touristic Coastal Town':'#00acc1','Small Town':'#fb8c00',
+              'Rural / Flatland':'#8d6e63','Mountainous / Highland':'#757575'}
 
 def score_color(s):
     if s >= 70: return '#1a9641'
@@ -193,12 +216,12 @@ with st.sidebar:
         if 'pop' in master.columns:
             st.metric("Total Population", f"{master['pop'].sum():,.0f}")
         st.markdown("**Cluster Distribution**")
-        c_order = ['A - En Iyi','B - Iyi','C - Ortanin Ustu','D - Orta','E - Dusuk','F - En Dusuk']
+        c_order = ['A - Best','B - Good','C - Above Avg','D - Average','E - Low','F - Lowest']
         rows = []
         for cl in c_order:
             sub = master[master['cluster_label']==cl]
             if len(sub)==0: continue
-            rows.append({'Cluster':tr(cl),'N':len(sub),'Score':f"{sub['score_final'].mean():.0f}"})
+            rows.append({'Cluster':cl,'N':len(sub),'Score':f"{sub['score_final'].mean():.0f}"})
         st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
         fig_hist = px.histogram(master, x='score_final', nbins=30, color='cluster_label',
                                  color_discrete_map=CLUSTER_COLORS, category_orders={'cluster_label':c_order})
@@ -293,15 +316,15 @@ with st.sidebar:
 
     elif page == "📊 Clusters":
         st.subheader("📊 Clustering (6-Tier)")
-        CDESC = {'A - En Iyi':"Central, service-dense, high population.","B - Iyi":"City fringe, mid-high accessibility.",
-                  'C - Ortanin Ustu':"Coastal / touristic areas.",'D - Orta':"Small towns.",
-                  'E - Dusuk':"Rural, limited infrastructure.",'F - En Dusuk':"Mountainous, hard to access."}
-        c_order = ['A - En Iyi','B - Iyi','C - Ortanin Ustu','D - Orta','E - Dusuk','F - En Dusuk']
+        CDESC = {'A - Best':"Central, service-dense, high population.","B - Good":"City fringe, mid-high accessibility.",
+                  'C - Above Avg':"Coastal / touristic areas.",'D - Average':"Small towns.",
+                  'E - Low':"Rural, limited infrastructure.",'F - Lowest':"Mountainous, hard to access."}
+        c_order = ['A - Best','B - Good','C - Above Avg','D - Average','E - Low','F - Lowest']
         for cl in c_order:
             sub = master[master['cluster_label']==cl]
             if len(sub)==0: continue
             clr = CLUSTER_COLORS.get(cl,'#888')
-            with st.expander(f"{tr(cl)} ({len(sub)} nbhd.)", expanded=(cl=='A - En Iyi')):
+            with st.expander(f"{cl} ({len(sub)} nbhd.)", expanded=(cl=='A - Best')):
                 st.caption(CDESC.get(cl,''))
                 if block_cols:
                     avg = sub[block_cols].mean()

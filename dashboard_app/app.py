@@ -452,7 +452,7 @@ def build_map():
         m.fit_bounds([[b[1], b[0]], [b[3], b[2]]])
     return m
 
-map_data = st_folium(build_map(), width=None, height=None, key="main_map",
+map_data = st_folium(build_map(), width=None, height=2500, key="main_map",
                       returned_objects=["last_object_clicked"])
 
 # ── FIND CLICKED MAHALLE ──────────────────────────────────────────────

@@ -74,6 +74,15 @@ div[data-testid="collapsedControl"] {display:none!important;}
 .stElementContainer {margin:0!important;padding:0!important;}
 div[data-testid="stVerticalBlock"] > div {gap:0!important;}
 iframe {width:100%!important;border:none!important;}
+/* Map fills entire viewport — target iframe + all parent containers */
+iframe[title="streamlit_folium.st_folium"] {height:100vh!important;min-height:100vh!important;}
+iframe[title="streamlit_folium.st_folium"],
+iframe[title="streamlit_folium.st_folium"] ~ div,
+div:has(> iframe[title="streamlit_folium.st_folium"]) {height:100vh!important;min-height:100vh!important;}
+[data-testid="stAppViewContainer"] > section > div {padding:0!important;}
+header[data-testid="stHeader"] {height:0!important;padding:0!important;overflow:hidden!important;}
+/* Remove bottom padding from main block */
+.stMainBlockContainer, [data-testid="stMainBlockContainer"] {padding-top:0!important;padding-bottom:0!important;}
 ::-webkit-scrollbar {width:5px;}
 ::-webkit-scrollbar-thumb {background:rgba(255,255,255,0.15);border-radius:3px;}
 @media (max-width:768px) {
@@ -162,7 +171,7 @@ _LABEL_TR_EN = {
     'Sehir Merkezi':'City Center','Sahil / Turistik':'Coastal / Touristic',
     'Sehir Siniri':'City Fringe','Turistik Sahil Kasabasi':'Touristic Coastal Town',
     'Kucuk Kasaba':'Small Town','Kirsal / Ovacik':'Rural / Flatland',
-    'Daglık / Yukari Yerlesim':'Mountainous / Highland',
+    'Dagl\u0131k / Yukari Yerlesim':'Mountainous / Highland',
     'Yuksek Potansiyel':'High Potential','Orta Potansiyel':'Mid Potential',
     'Dusuk Potansiyel':'Low Potential','Stabil':'Stable','Duragan':'Stagnant',
 }
@@ -200,10 +209,10 @@ with st.sidebar:
         search = st.selectbox("🔍 Search Neighborhood:", [""] + name_options, key="detail_search")
     with clr_col:
         st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("✕", key="clear_search", help="Clear search"):
-            st.session_state.detail_search = ""
+        def _clear_search():
+            st.session_state["detail_search"] = ""
             st.session_state.pop('show_detail', None)
-            st.rerun()
+        st.button("✕", key="clear_search", help="Clear search", on_click=_clear_search)
     st.divider()
 
     # ── TAB CONTENT ───────────────────────────────────────────────
@@ -234,10 +243,12 @@ with st.sidebar:
         if 'compare_list' not in st.session_state: st.session_state.compare_list = []
 
         pick = st.selectbox("Select neighborhood:", [""] + name_options, key="cmp_pick")
-        if st.button("➕ Add", type="primary"):
-            if pick and pick not in st.session_state.compare_list and len(st.session_state.compare_list) < 5:
-                st.session_state.compare_list.append(pick)
-                st.rerun()
+        def _add_compare():
+            p = st.session_state.get("cmp_pick", "")
+            if p and p not in st.session_state.compare_list and len(st.session_state.compare_list) < 5:
+                st.session_state.compare_list.append(p)
+            st.session_state["cmp_pick"] = ""
+        st.button("➕ Add", type="primary", on_click=_add_compare)
         # Show selected neighborhoods — click X to remove
         if st.session_state.compare_list:
             kept = st.multiselect("Selected (click X to remove):",
@@ -251,20 +262,69 @@ with st.sidebar:
             sel_ids = [name_to_id.get(n) for n in st.session_state.compare_list if n in name_to_id]
             comp = master[master['mah_id'].isin(sel_ids)].copy()
             comp['display'] = comp.apply(lambda r: f"{r['mah_name']} ({r['ilce_name']})", axis=1)
+            # Score cards with district name
             cols = st.columns(len(comp))
+            palette = ['#42a5f5','#ef5350','#66bb6a','#ffa726','#ab47bc']
             for i, (_, r) in enumerate(comp.iterrows()):
                 with cols[i]:
-                    st.metric(r['mah_name'][:10], f"{r['score_final']:.0f}")
+                    clr = palette[i % len(palette)]
+                    st.markdown(f"""<div style="background:rgba(255,255,255,0.05);border-left:4px solid {clr};
+                        border-radius:8px;padding:10px 14px;margin-bottom:8px;">
+                        <div style="font-size:0.85rem;font-weight:600;color:#fff;">{r['mah_name']}</div>
+                        <div style="font-size:0.65rem;color:#888;">{r['ilce_name']}</div>
+                        <div style="font-size:1.5rem;font-weight:700;color:{clr};margin-top:4px;">{r['score_final']:.0f}</div>
+                    </div>""", unsafe_allow_html=True)
             radar_cols = [c for c in block_cols if c in comp.columns]
             if radar_cols:
+                # Readable labels
+                label_map = {'demographics':'Demographics','built_activity':'Built Activity',
+                             'accessibility':'Accessibility','morphology':'Morphology',
+                             'environment':'Environment','seasonality':'Seasonality'}
+                labels = [label_map.get(c, c.replace('_',' ').title()) for c in radar_cols]
+                # Radar chart
                 fig = go.Figure()
-                for _, row in comp.iterrows():
+                for i, (_, row) in enumerate(comp.iterrows()):
                     vals = [row.get(c,0) for c in radar_cols]
-                    fig.add_trace(go.Scatterpolar(r=vals+[vals[0]], theta=radar_cols+[radar_cols[0]],
-                                                   fill='toself', name=row['display'][:15], opacity=0.6))
-                fig.update_layout(polar=dict(radialaxis=dict(visible=True)), height=300,
-                                  margin=dict(l=20,r=20,t=20,b=20))
+                    clr = palette[i % len(palette)]
+                    fig.add_trace(go.Scatterpolar(
+                        r=vals+[vals[0]], theta=labels+[labels[0]],
+                        fill='toself', name=row['display'],
+                        opacity=0.35, line=dict(color=clr, width=2),
+                        fillcolor=clr
+                    ))
+                fig.update_layout(
+                    polar=dict(
+                        radialaxis=dict(visible=True, showline=False, gridcolor='rgba(255,255,255,0.1)',
+                                       tickfont=dict(size=9, color='#888')),
+                        angularaxis=dict(gridcolor='rgba(255,255,255,0.08)',
+                                        tickfont=dict(size=11, color='#ccc')),
+                        bgcolor='rgba(0,0,0,0)'
+                    ),
+                    height=380, margin=dict(l=40,r=40,t=30,b=30),
+                    paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                    legend=dict(font=dict(size=10, color='#ccc'), orientation='h',
+                                yanchor='bottom', y=-0.15, xanchor='center', x=0.5)
+                )
                 st.plotly_chart(fig, use_container_width=True)
+                # Grouped bar chart for easier comparison
+                import plotly.express as px
+                bar_data = []
+                for _, row in comp.iterrows():
+                    for c, l in zip(radar_cols, labels):
+                        bar_data.append({'Neighborhood': row['display'], 'Block': l, 'Score': row.get(c,0)})
+                bar_df = pd.DataFrame(bar_data)
+                fig_bar = px.bar(bar_df, x='Block', y='Score', color='Neighborhood',
+                                barmode='group', color_discrete_sequence=palette[:len(comp)])
+                fig_bar.update_layout(
+                    height=280, margin=dict(l=0,r=0,t=10,b=30),
+                    paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                    xaxis=dict(gridcolor='rgba(255,255,255,0.05)', tickfont=dict(color='#ccc')),
+                    yaxis=dict(gridcolor='rgba(255,255,255,0.08)', tickfont=dict(color='#999'),
+                              title='', zeroline=True, zerolinecolor='rgba(255,255,255,0.15)'),
+                    legend=dict(font=dict(size=9, color='#ccc'), orientation='h',
+                                yanchor='bottom', y=-0.25, xanchor='center', x=0.5)
+                )
+                st.plotly_chart(fig_bar, use_container_width=True)
         else:
             st.info("Add at least 2 neighborhoods.")
 
@@ -373,11 +433,15 @@ def build_map():
         else: fc = score_color(s)
         return {'fillColor':fc,'color':'#333','weight':0.5,'fillOpacity':0.72}
     tf = [f for f in ['mah_name','ilce_name','score_final','cluster_label','geo_type'] if f in gdf_show.columns]
-    folium.GeoJson(gdf_show, style_function=style_fn,
-        tooltip=folium.GeoJsonTooltip(fields=tf,
-            aliases=['Neighborhood:','District:','Score:','Cluster:','Type:'],
-            style="font-size:12px;padding:8px;background:rgba(0,0,0,0.85);color:#fff;border-radius:8px;border:1px solid rgba(255,255,255,0.15);")
-    ).add_to(m)
+    al = ['Neighborhood:','District:','Score:','Cluster:','Type:']
+    if len(gdf_show) > 0 and tf:
+        folium.GeoJson(gdf_show, style_function=style_fn,
+            tooltip=folium.GeoJsonTooltip(fields=tf,
+                aliases=al[:len(tf)],
+                style="font-size:12px;padding:8px;background:rgba(0,0,0,0.85);color:#fff;border-radius:8px;border:1px solid rgba(255,255,255,0.15);")
+        ).add_to(m)
+    elif len(gdf_show) > 0:
+        folium.GeoJson(gdf_show, style_function=style_fn).add_to(m)
     # Highlight searched
     if highlight_geom is not None and len(highlight_geom) > 0:
         folium.GeoJson(highlight_geom,
@@ -388,7 +452,7 @@ def build_map():
         m.fit_bounds([[b[1], b[0]], [b[3], b[2]]])
     return m
 
-map_data = st_folium(build_map(), width=None, height=930, key="main_map",
+map_data = st_folium(build_map(), width=None, height=2000, key="main_map",
                       returned_objects=["last_object_clicked"])
 
 # ── FIND CLICKED MAHALLE ──────────────────────────────────────────────
@@ -399,6 +463,7 @@ panel_visible = True
 if search and search in name_to_id:
     detail_mah_id = name_to_id[search]
     st.session_state.last_detail_source = 'search'
+    st.session_state.pop('detail_closed_click', None)  # Arama yapilinca panel acilsin
 
 # From map click (override)
 if map_data and map_data.get("last_object_clicked"):
@@ -457,8 +522,8 @@ if detail_mah_id and panel_visible:
             </div>
         </div>
         <div style="margin-top:6px;">
-            <span style="background:rgba(255,255,255,0.08);padding:3px 8px;border-radius:5px;font-size:0.75rem;margin-right:4px;">🏷️ {tr(r.get('cluster_label','-'))}</span>
-            <span style="background:rgba(255,255,255,0.08);padding:3px 8px;border-radius:5px;font-size:0.75rem;">🌍 {tr(r.get('geo_type','-'))}</span>
+            <span style="background:rgba(255,255,255,0.08);padding:3px 8px;border-radius:5px;font-size:0.75rem;margin-right:4px;">🏷️ {r.get('cluster_label','-')}</span>
+            <span style="background:rgba(255,255,255,0.08);padding:3px 8px;border-radius:5px;font-size:0.75rem;">🌍 {r.get('geo_type','-')}</span>
         </div>"""
 
     # ── 5Y Future prediction
@@ -470,7 +535,7 @@ if detail_mah_id and panel_visible:
             <span style="color:#aaa;font-size:0.75rem;">5-Year Forecast</span>
             <b style="color:{col};margin-left:6px;font-size:1rem;">{r['predicted_score_5y']:.1f}</b>
             <span style="color:{col};font-size:0.85rem;"> {ar} {abs(c):.1f}</span>
-            <span style="color:#aaa;margin-left:8px;font-size:0.75rem;">| {tr(r.get('future_class','-'))}</span>
+            <span style="color:#aaa;margin-left:8px;font-size:0.75rem;">| {r.get('future_class','-')}</span>
         </div>"""
 
     html += divider()

@@ -13,6 +13,7 @@ import geopandas as gpd
 from shapely.geometry import Point
 import streamlit.components.v1 as stc
 import os, sys
+import html as html_lib
 
 sys.path.insert(0, os.path.dirname(__file__))
 from recommendation_engine import PERSONAS, build_sub_scores, recommend
@@ -196,6 +197,340 @@ def score_color(s):
     return '#d73027'
 
 
+def esc(value):
+    return html_lib.escape("" if pd.isna(value) else str(value), quote=True)
+
+
+COMPARE_METRICS = [
+    ('education_score', 'Education'),
+    ('health_score', 'Healthcare'),
+    ('green_score', 'Green Area'),
+    ('quiet_score', 'Quietness'),
+    ('safety_score', 'Safety'),
+    ('heat_comfort', 'Heat Comfort'),
+    ('transport_score', 'Transit'),
+    ('walkability_score', 'Walkability'),
+    ('social_score', 'Social Life'),
+    ('daily_needs_score', 'Daily Needs'),
+    ('affordability_score', 'Affordability'),
+    ('coastal_proximity', 'Coastal Access'),
+]
+
+KEY_FACTS = [
+    ('pop', 'Population', lambda v: f"{v:,.0f}"),
+    ('poi_density_per_km2', 'POI Density', lambda v: f"{v:.1f}/km2"),
+    ('green_natural_share', 'Green Ratio', lambda v: f"{v*100:.1f}%"),
+    ('noise_density_per_km2', 'Noise', lambda v: f"{v:.1f}"),
+    ('mean_summer_lst_c', 'Summer Temp', lambda v: f"{v:.1f} C"),
+    ('street_density_km_per_km2', 'Street Density', lambda v: f"{v:.1f} km/km2"),
+]
+
+
+def format_fact(raw_row, col, formatter):
+    if raw_row is None or col not in raw_row.index or pd.isna(raw_row.get(col)):
+        return "-"
+    try:
+        return formatter(float(raw_row.get(col)))
+    except Exception:
+        return "-"
+
+
+def build_compare_modal(comp, raw_df):
+    palette = ['#42a5f5', '#ef5350', '#66bb6a', '#ffa726', '#ab47bc']
+    raw_lookup = raw_df.set_index('mah_id') if 'mah_id' in raw_df.columns else None
+
+    cards = []
+    for i, (_, r) in enumerate(comp.iterrows()):
+        clr = palette[i % len(palette)]
+        raw_score = r.get('score_final', 0)
+        sc = float(raw_score) if pd.notna(raw_score) else 0
+        change = r.get('score_change_5y')
+        forecast = ""
+        if pd.notna(change):
+            sign = "+" if change >= 0 else ""
+            forecast = f"<span style='color:{'#81c784' if change >= 0 else '#ef9a9a'};'>{sign}{change:.1f} in 5Y</span>"
+        cards.append(f"""
+            <div style="background:rgba(255,255,255,0.045);border:1px solid rgba(255,255,255,0.08);border-top:3px solid {clr};border-radius:10px;padding:12px;min-width:0;">
+                <div style="font-size:0.95rem;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{esc(r.get('mah_name'))}</div>
+                <div style="font-size:0.72rem;color:#8f96a3;margin-top:2px;">{esc(r.get('ilce_name'))}</div>
+                <div style="display:flex;align-items:flex-end;gap:8px;margin-top:10px;">
+                    <div style="font-size:2rem;line-height:1;font-weight:800;color:{score_color(sc)};">{sc:.0f}</div>
+                    <div style="font-size:0.7rem;color:#9aa0aa;margin-bottom:2px;">overall</div>
+                </div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;">
+                    <span style="background:rgba(255,255,255,0.07);padding:3px 7px;border-radius:6px;font-size:0.68rem;color:#cfd3da;">{esc(r.get('cluster_label', '-'))}</span>
+                    <span style="background:rgba(255,255,255,0.07);padding:3px 7px;border-radius:6px;font-size:0.68rem;color:#cfd3da;">{esc(r.get('geo_type', '-'))}</span>
+                </div>
+                <div style="font-size:0.68rem;color:#8f96a3;margin-top:8px;">{forecast}</div>
+            </div>
+        """)
+
+    metric_rows = []
+    available_metrics = [(c, l) for c, l in COMPARE_METRICS if c in comp.columns]
+    for col, label in available_metrics:
+        vals = [float(v) if pd.notna(v) else np.nan for v in comp[col].values]
+        valid_vals = [v for v in vals if not np.isnan(v)]
+        best = max(valid_vals) if valid_vals else np.nan
+        cells = []
+        for i, v in enumerate(vals):
+            clr = palette[i % len(palette)]
+            is_best = pd.notna(v) and pd.notna(best) and abs(v - best) < 1e-9
+            width = 0 if np.isnan(v) else max(3, min(100, v))
+            val_txt = "-" if np.isnan(v) else f"{v:.0f}"
+            border = f"border:1px solid {clr};" if is_best else "border:1px solid rgba(255,255,255,0.06);"
+            cells.append(f"""
+                <td style="padding:7px 8px;vertical-align:middle;{border}border-radius:7px;background:{'rgba(100,181,246,0.10)' if is_best else 'rgba(255,255,255,0.025)'};">
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <b style="width:30px;color:#f3f6fb;font-size:0.8rem;">{val_txt}</b>
+                        <div style="height:7px;background:rgba(255,255,255,0.08);border-radius:99px;flex:1;overflow:hidden;">
+                            <div style="height:100%;width:{width:.0f}%;background:{clr};border-radius:99px;"></div>
+                        </div>
+                    </div>
+                </td>
+            """)
+        winner = "-"
+        if valid_vals:
+            winner_idx = vals.index(best)
+            winner = comp.iloc[winner_idx].get('mah_name', '-')
+        metric_rows.append(f"""
+            <tr>
+                <th style="text-align:left;padding:8px 10px;color:#c7d0df;font-size:0.78rem;font-weight:650;white-space:nowrap;">{label}</th>
+                {''.join(cells)}
+                <td style="padding:8px 10px;color:#9fb8d8;font-size:0.72rem;white-space:nowrap;">{esc(winner)}</td>
+            </tr>
+        """)
+
+    fact_rows = []
+    for col, label, formatter in KEY_FACTS:
+        cells = []
+        for i, (_, r) in enumerate(comp.iterrows()):
+            raw_row = None
+            if raw_lookup is not None and r.get('mah_id') in raw_lookup.index:
+                raw_row = raw_lookup.loc[r.get('mah_id')]
+            cells.append(f"<td style='padding:7px 10px;color:#dbe0e8;font-size:0.76rem;background:rgba(255,255,255,0.025);border-radius:7px;'>{esc(format_fact(raw_row, col, formatter))}</td>")
+        fact_rows.append(f"""
+            <tr>
+                <th style="text-align:left;padding:7px 10px;color:#aeb7c5;font-size:0.76rem;font-weight:600;white-space:nowrap;">{label}</th>
+                {''.join(cells)}
+            </tr>
+        """)
+
+    names_header = ''.join(
+        f"<th style='padding:8px 8px;color:{palette[i % len(palette)]};font-size:0.72rem;text-align:left;white-space:nowrap;'>{esc(r.get('mah_name'))}</th>"
+        for i, (_, r) in enumerate(comp.iterrows())
+    )
+    card_cols = min(len(comp), 5)
+    modal_html = f"""
+    <div id="compare-backdrop" style="position:fixed;inset:0;background:rgba(0,0,0,0.45);backdrop-filter:blur(4px);z-index:999990;"></div>
+    <div id="compare-panel" style="position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(1040px,calc(100vw - 44px));max-height:86vh;overflow:auto;background:rgba(14,14,20,0.97);border:1px solid rgba(255,255,255,0.13);border-radius:14px;box-shadow:0 18px 70px rgba(0,0,0,0.68);z-index:999991;color:#d0d0d0;font-family:'Inter',sans-serif;padding:18px;">
+        <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin-bottom:14px;">
+            <div>
+                <div style="font-size:1.05rem;font-weight:800;color:#fff;">Neighborhood Comparison</div>
+                <div style="font-size:0.76rem;color:#8f96a3;margin-top:3px;">Meaningful sub-scores and key facts, side by side. Best value in each row is outlined.</div>
+            </div>
+            <div id="compare-close-btn" style="cursor:pointer;color:#8f96a3;font-size:1.15rem;width:30px;height:30px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(255,255,255,0.06);">x</div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat({card_cols},minmax(0,1fr));gap:10px;margin-bottom:14px;">
+            {''.join(cards)}
+        </div>
+        <div style="color:#64b5f6;font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.9px;margin:14px 0 8px;">Preference Sub-Scores</div>
+        <div style="overflow:auto;">
+            <table style="width:100%;border-collapse:separate;border-spacing:4px;">
+                <thead>
+                    <tr>
+                        <th style="width:150px;"></th>
+                        {names_header}
+                        <th style="padding:8px 10px;color:#8f96a3;font-size:0.72rem;text-align:left;">Best</th>
+                    </tr>
+                </thead>
+                <tbody>{''.join(metric_rows)}</tbody>
+            </table>
+        </div>
+        <div style="border-top:1px solid rgba(255,255,255,0.07);margin:14px 0;"></div>
+        <div style="color:#64b5f6;font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.9px;margin:0 0 8px;">Context Facts</div>
+        <div style="overflow:auto;">
+            <table style="width:100%;border-collapse:separate;border-spacing:4px;">
+                <thead><tr><th style="width:150px;"></th>{names_header}</tr></thead>
+                <tbody>{''.join(fact_rows)}</tbody>
+            </table>
+        </div>
+    </div>
+    """
+    return modal_html
+
+
+def render_compare_modal(comp, raw_df):
+    modal_html = build_compare_modal(comp, raw_df)
+    modal_escaped = modal_html.replace('\\', '\\\\').replace("'", "\\'").replace('\r', '').replace('\n', ' ')
+    stc.html(f"""
+    <script>
+    (function() {{
+        var pd = window.parent.document;
+        ['compare-panel','compare-backdrop'].forEach(function(id) {{
+            var old = pd.getElementById(id);
+            if (old) old.remove();
+        }});
+        var wrapper = pd.createElement('div');
+        wrapper.innerHTML = '{modal_escaped}';
+        while (wrapper.firstChild) {{
+            pd.body.appendChild(wrapper.firstChild);
+        }}
+        function closeCompare() {{
+            ['compare-panel','compare-backdrop'].forEach(function(id) {{
+                var el = pd.getElementById(id);
+                if (el) el.remove();
+            }});
+        }}
+        var closeBtn = pd.getElementById('compare-close-btn');
+        var backdrop = pd.getElementById('compare-backdrop');
+        if (closeBtn) {{
+            closeBtn.onclick = closeCompare;
+            closeBtn.onmouseenter = function() {{
+                this.style.background = 'rgba(255,255,255,0.15)';
+                this.style.color = '#fff';
+            }};
+            closeBtn.onmouseleave = function() {{
+                this.style.background = 'rgba(255,255,255,0.06)';
+                this.style.color = '#8f96a3';
+            }};
+        }}
+        if (backdrop) backdrop.onclick = closeCompare;
+    }})();
+    </script>
+    """, height=0)
+
+
+def clear_compare_modal():
+    stc.html("""
+    <script>
+    (function() {
+        var pd = window.parent.document;
+        ['compare-panel','compare-backdrop'].forEach(function(id) {
+            var old = pd.getElementById(id);
+            if (old) old.remove();
+        });
+    })();
+    </script>
+    """, height=0)
+
+
+def row_display_name(row):
+    return f"{row.get('mah_name')} ({row.get('ilce_name')})"
+
+
+def enrich_recommendations(res):
+    if res is None or len(res) == 0:
+        return pd.DataFrame()
+    extra_cols = [
+        'mah_id', 'score_final', 'cluster_label', 'geo_type',
+        'predicted_score_5y', 'score_change_5y', 'future_class'
+    ]
+    extra_cols = [c for c in extra_cols if c in master.columns]
+    enriched = res.merge(master[extra_cols], on='mah_id', how='left')
+    enriched['display'] = enriched.apply(row_display_name, axis=1)
+    return enriched
+
+
+def recommendation_strengths(row, metric_cols, limit=3):
+    strengths = []
+    for col, label in COMPARE_METRICS:
+        if col in metric_cols and col in row.index and pd.notna(row.get(col)):
+            strengths.append((label, float(row.get(col))))
+    strengths.sort(key=lambda item: item[1], reverse=True)
+    return strengths[:limit]
+
+
+def compare_modal_for_names(names):
+    if len(names) < 2:
+        return
+    sel_ids = [name_to_id.get(n) for n in names if n in name_to_id]
+    comp = master[master['mah_id'].isin(sel_ids)].copy()
+    if len(comp) < 2:
+        return
+    comp['display'] = comp.apply(row_display_name, axis=1)
+    comp['_order'] = comp['display'].apply(lambda n: names.index(n) if n in names else 999)
+    render_compare_modal(comp.sort_values('_order'), raw_df)
+
+
+def render_recommendation_results(res, key_prefix, score_col='persona_score', metric_cols=None):
+    res = enrich_recommendations(res)
+    if res.empty:
+        st.warning("No matching neighborhoods.")
+        return
+
+    metric_cols = metric_cols or [c for c, _ in COMPARE_METRICS if c in res.columns]
+    show_cols = [
+        'sira', 'mah_name', 'ilce_name', score_col, 'score_final',
+        'cluster_label', 'geo_type', 'predicted_score_5y'
+    ]
+    show_cols = [c for c in show_cols if c in res.columns]
+    labels = {
+        'sira': 'Rank',
+        'mah_name': 'Neighborhood',
+        'ilce_name': 'District',
+        score_col: 'Match',
+        'score_final': 'Overall',
+        'cluster_label': 'Cluster',
+        'geo_type': 'Geo Type',
+        'predicted_score_5y': '5Y Score',
+    }
+    st.dataframe(
+        res[show_cols].rename(columns=labels),
+        hide_index=True,
+        use_container_width=True,
+    )
+
+    a1, a2 = st.columns(2)
+    with a1:
+        if st.button("Compare Top 3", type="primary", use_container_width=True, key=f"{key_prefix}_cmp_top3"):
+            names = res.head(3)['display'].tolist()
+            st.session_state.compare_list = names
+            st.session_state.rec_compare_active = True
+            st.rerun()
+    with a2:
+        if st.button("Send Top 5 to Compare", use_container_width=True, key=f"{key_prefix}_cmp_top5"):
+            st.session_state.compare_list = res.head(5)['display'].tolist()
+            st.session_state.rec_compare_active = True
+            st.rerun()
+
+    st.markdown("**Why these results?**")
+    for _, row in res.head(5).iterrows():
+        score = row.get(score_col, 0)
+        overall = row.get('score_final')
+        title = f"#{int(row.get('sira', 0))} {row.get('mah_name')} ({row.get('ilce_name')})"
+        with st.expander(title, expanded=int(row.get('sira', 0)) == 1):
+            st.write(
+                f"Match **{score:.0f}**"
+                + (f" | Overall **{overall:.0f}**" if pd.notna(overall) else "")
+            )
+            strengths = recommendation_strengths(row, metric_cols)
+            if strengths:
+                chips = " ".join([
+                    f"<span style='display:inline-block;margin:2px 3px;padding:4px 8px;background:rgba(100,181,246,0.14);border-radius:6px;font-size:0.75rem;'>{esc(label)} {value:.0f}</span>"
+                    for label, value in strengths
+                ])
+                st.markdown(chips, unsafe_allow_html=True)
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("Show Detail", key=f"{key_prefix}_detail_{row.get('mah_id')}", use_container_width=True):
+                    st.session_state.focus_mah_id = row.get('mah_id')
+                    st.session_state.last_detail_source = 'recommend'
+                    st.session_state.pop('detail_closed_click', None)
+                    st.rerun()
+            with c2:
+                if st.button("Add Compare", key=f"{key_prefix}_addcmp_{row.get('mah_id')}", use_container_width=True):
+                    if 'compare_list' not in st.session_state:
+                        st.session_state.compare_list = []
+                    name = row.get('display')
+                    if name and name not in st.session_state.compare_list and len(st.session_state.compare_list) < 5:
+                        st.session_state.compare_list.append(name)
+                    st.session_state.rec_compare_active = len(st.session_state.compare_list) >= 2
+                    st.rerun()
+
+    if st.session_state.get('rec_compare_active') and len(st.session_state.get('compare_list', [])) >= 2:
+        compare_modal_for_names(st.session_state.compare_list)
+
+
 
 
 # ── SIDEBAR ───────────────────────────────────────────────────────────
@@ -238,17 +573,58 @@ with st.sidebar:
                                 margin=dict(l=0,r=0,t=10,b=30))
         st.plotly_chart(fig_hist, use_container_width=True)
 
+    elif page.endswith(" Compare"):
+        st.subheader("Comparison")
+        if 'compare_list' not in st.session_state:
+            st.session_state.compare_list = []
+
+        pick = st.selectbox("Select neighborhood:", [""] + name_options, key="cmp_pick_v2")
+        c_add, c_clear = st.columns([2, 1])
+        with c_add:
+            if st.button("Add", type="primary", use_container_width=True, key="cmp_add_v2"):
+                if pick and pick not in st.session_state.compare_list and len(st.session_state.compare_list) < 5:
+                    st.session_state.compare_list.append(pick)
+                    st.rerun()
+        with c_clear:
+            if st.button("Clear", use_container_width=True, key="cmp_clear_v2"):
+                st.session_state.compare_list = []
+                st.rerun()
+
+        if st.session_state.compare_list:
+            kept = st.multiselect(
+                "Selected neighborhoods:",
+                st.session_state.compare_list,
+                default=st.session_state.compare_list,
+                key="cmp_kept_v2",
+            )
+            if kept != st.session_state.compare_list:
+                st.session_state.compare_list = kept
+                st.rerun()
+
+        if len(st.session_state.compare_list) >= 2:
+            sel_ids = [name_to_id.get(n) for n in st.session_state.compare_list if n in name_to_id]
+            comp = master[master['mah_id'].isin(sel_ids)].copy()
+            comp['display'] = comp.apply(lambda r: f"{r['mah_name']} ({r['ilce_name']})", axis=1)
+            comp['_order'] = comp['display'].apply(
+                lambda n: st.session_state.compare_list.index(n) if n in st.session_state.compare_list else 999
+            )
+            comp = comp.sort_values('_order')
+            st.caption("The comparison opens in the center of the map.")
+            st.write(f"**{len(comp)} neighborhoods selected.**")
+            render_compare_modal(comp, raw_df)
+        else:
+            clear_compare_modal()
+            st.info("Add at least 2 neighborhoods.")
+
     elif page == "⚖️ Compare":
         st.subheader("⚖️ Comparison")
         if 'compare_list' not in st.session_state: st.session_state.compare_list = []
 
         pick = st.selectbox("Select neighborhood:", [""] + name_options, key="cmp_pick")
-        def _add_compare():
-            p = st.session_state.get("cmp_pick", "")
-            if p and p not in st.session_state.compare_list and len(st.session_state.compare_list) < 5:
-                st.session_state.compare_list.append(p)
-            st.session_state["cmp_pick"] = ""
-        st.button("➕ Add", type="primary", on_click=_add_compare)
+        if st.button("➕ Add", type="primary"):
+            if pick and pick not in st.session_state.compare_list and len(st.session_state.compare_list) < 5:
+                st.session_state.compare_list.append(pick)
+                st.rerun()
         # Show selected neighborhoods — click X to remove
         if st.session_state.compare_list:
             kept = st.multiselect("Selected (click X to remove):",
@@ -334,13 +710,30 @@ with st.sidebar:
         with tab1:
             sel_p = st.selectbox("Profile:", list(PERSONAS.keys()))
             st.info(PERSONAS[sel_p]['description'])
-            ilce_f = st.selectbox("District:", ['All'] + sorted(raw_df['ilce_name'].dropna().unique()))
-            top_n = st.slider("Count:", 5, 20, 10)
+            f1, f2 = st.columns(2)
+            with f1:
+                ilce_f = st.selectbox("District:", ['All'] + sorted(raw_df['ilce_name'].dropna().unique()))
+            geo_raw_options = sorted(scores_df['geo_type'].dropna().unique()) if 'geo_type' in scores_df.columns else []
+            geo_display_to_raw = {'All': None}
+            for opt in geo_raw_options:
+                geo_display_to_raw[_LABEL_TR_EN.get(str(opt), str(opt))] = opt
+            with f2:
+                geo_f = st.selectbox("Geo Type:", list(geo_display_to_raw.keys()))
+            top_n = st.slider("Count:", 5, 20, 10, key="profile_top_n")
             if st.button("Show Results", type="primary", key="btn_p"):
                 res = recommend(raw_df, sel_p, top_n=top_n,
+                                geo_filter=geo_display_to_raw.get(geo_f),
                                 ilce_filter=None if ilce_f=='All' else ilce_f)
-                for _, r in res.iterrows():
-                    st.write(f"**#{int(r['sira'])}** {r['mah_name']} ({r['ilce_name']}) — **{r['persona_score']:.0f}**")
+                st.session_state.profile_results = res
+                st.session_state.profile_metric_cols = list(PERSONAS[sel_p]['weights'].keys())
+                st.session_state.rec_compare_active = False
+            if 'profile_results' in st.session_state:
+                render_recommendation_results(
+                    st.session_state.profile_results,
+                    key_prefix="profile",
+                    score_col='persona_score',
+                    metric_cols=st.session_state.get('profile_metric_cols'),
+                )
         with tab2:
             st.markdown("**Set your own preferences**")
             sub_scores = build_sub_scores(raw_df)
@@ -368,11 +761,33 @@ with st.sidebar:
                     if wk in sub_scores and wv > 0: custom += sub_scores[wk] * (wv / total_w)
                 score_m = np.where(mask, custom, -1)
                 top_idx = np.argsort(-score_m)[:15]
-                st.write(f"**{mask.sum()} neighborhoods matched.** Top 15:")
+                custom_rows = []
                 for rank, idx in enumerate(top_idx, 1):
                     if not mask[idx]: break
                     r = raw_df.iloc[idx]
-                    st.write(f"**#{rank}** {r['mah_name']} ({r['ilce_name']}) — {custom[idx]:.0f}")
+                    row = {
+                        'sira': rank,
+                        'mah_name': r.get('mah_name', '?'),
+                        'ilce_name': r.get('ilce_name', '?'),
+                        'mah_id': r.get('mah_id'),
+                        'persona_score': round(custom[idx], 1),
+                    }
+                    for wk, wv in weights.items():
+                        if wk in sub_scores and wv > 0:
+                            row[wk] = round(sub_scores[wk][idx], 1)
+                    custom_rows.append(row)
+                st.session_state.custom_results = pd.DataFrame(custom_rows)
+                st.session_state.custom_metric_cols = [wk for wk, wv in weights.items() if wv > 0]
+                st.session_state.custom_match_count = int(mask.sum())
+                st.session_state.rec_compare_active = False
+            if 'custom_results' in st.session_state:
+                st.write(f"**{st.session_state.get('custom_match_count', 0)} neighborhoods matched.** Top 15:")
+                render_recommendation_results(
+                    st.session_state.custom_results,
+                    key_prefix="custom",
+                    score_col='persona_score',
+                    metric_cols=st.session_state.get('custom_metric_cols'),
+                )
 
     elif page == "📊 Clusters":
         st.subheader("📊 Clustering (6-Tier)")
@@ -410,6 +825,12 @@ with st.sidebar:
         st.session_state.detail_closed_click = (st.session_state.get('detail_closed_click', 0) or 0) + 1
         st.rerun()
 
+allow_compare_modal = page.endswith(" Compare") or (
+    page.endswith(" Recommend") and st.session_state.get('rec_compare_active')
+)
+if not allow_compare_modal:
+    clear_compare_modal()
+
 # ── MAP ───────────────────────────────────────────────────────────────
 gdf_map = gdf[['mah_id','geometry']].merge(master, on='mah_id', how='left')
 mask_map = gdf_map['cluster_label'].isin(cluster_filter) & gdf_map['geo_type'].isin(geo_filter)
@@ -419,6 +840,9 @@ gdf_show = gdf_map[mask_map].copy()
 highlight_geom = None
 if search and search in name_to_id:
     mid = name_to_id[search]
+    highlight_geom = gdf_map[gdf_map['mah_id'] == mid]
+elif st.session_state.get('focus_mah_id'):
+    mid = st.session_state.get('focus_mah_id')
     highlight_geom = gdf_map[gdf_map['mah_id'] == mid]
 
 def build_map():
@@ -452,7 +876,7 @@ def build_map():
         m.fit_bounds([[b[1], b[0]], [b[3], b[2]]])
     return m
 
-map_data = st_folium(build_map(), width=None, height=2500, key="main_map",
+map_data = st_folium(build_map(), width=None, height=2000, key="main_map",
                       returned_objects=["last_object_clicked"])
 
 # ── FIND CLICKED MAHALLE ──────────────────────────────────────────────
@@ -464,6 +888,9 @@ if search and search in name_to_id:
     detail_mah_id = name_to_id[search]
     st.session_state.last_detail_source = 'search'
     st.session_state.pop('detail_closed_click', None)  # Arama yapilinca panel acilsin
+elif st.session_state.get('focus_mah_id'):
+    detail_mah_id = st.session_state.get('focus_mah_id')
+    st.session_state.last_detail_source = 'recommend'
 
 # From map click (override)
 if map_data and map_data.get("last_object_clicked"):
@@ -636,4 +1063,3 @@ if detail_mah_id and panel_visible:
     }})();
     </script>
     """, height=0)
-

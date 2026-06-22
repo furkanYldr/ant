@@ -1,7 +1,7 @@
 # 🏘️ Antalya Mahalle Karar Destek Sistemi
 
 Antalya ili 913 mahallesi için veri tabanlı yaşanılabilirlik analizi ve interaktif harita dashboard'u.
-
+T
 ## Özellikler
 - **Tam ekran interaktif harita** — Skor, Küme veya Geo Tip'e göre renklendirme
 - **Hamburger menü** — Sol üstte açılıp kapanan panel (Genel/Karşılaştırma/Öneri/Kümeleme sekmeleri)
@@ -10,7 +10,7 @@ Antalya ili 913 mahallesi için veri tabanlı yaşanılabilirlik analizi ve inte
 - **Persona bazlı öneri** — 10 farklı yaşam profili (Aile, Öğrenci, Emekli, vb.)
 - **Özel filtreleme** — POI ağırlıkları ve yaşam tercihleriyle kişisel sıralama
 - **6-Tier kümeleme** — Mahalle kalite sınıflandırması
-
+H
 ## Kurulum
 
 ```bash
@@ -18,13 +18,13 @@ pip install -r requirements.txt
 ```
 
 ## Çalıştırma
-
+A
 ```bash
 streamlit run app.py
 ```
 
 ## Dosya Yapısı
-
+A
 ```
 dashboard_app/
 ├── app.py                                    # Ana Streamlit uygulaması
